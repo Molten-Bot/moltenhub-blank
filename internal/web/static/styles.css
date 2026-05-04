@@ -6296,10 +6296,10 @@ pre {
 .page-header {
   align-items: center;
   gap: 18px;
-  border: 1px solid rgba(125, 215, 232, 0.1);
+  border: 1px solid var(--surface-auth-panel-border);
   border-radius: var(--radius-surface);
-  background: #070f1f;
-  box-shadow: 0 16px 36px rgba(7, 15, 31, 0.18);
+  background: var(--surface-auth-panel-bg);
+  box-shadow: var(--surface-auth-panel-shadow);
   padding: 14px 20px;
 }
 
@@ -6319,7 +6319,7 @@ pre {
 
 .brand-copy h1 {
   margin: 0;
-  color: #f5f7ff;
+  color: var(--text);
   font-size: clamp(1.32rem, 2.5vw, 1.62rem);
   font-weight: 800;
   letter-spacing: 0.12em;
@@ -6329,7 +6329,7 @@ pre {
 
 .brand-copy p {
   margin: 0;
-  color: #f5f7ff;
+  color: var(--text-soft);
   font-size: clamp(0.88rem, 1.8vw, 1rem);
   font-weight: 700;
   line-height: 1.2;

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -136,10 +136,46 @@
       </div>
     </section>
   </main>
+  <div class="page-bottom-dock" aria-hidden="false">
+    <div class="prompt-mode-tabs prompt-mode-tabs-dock" aria-label="Blank menu">
+      <a
+        id="moltenbot-hub-link"
+        class="prompt-mode-link prompt-mode-link-logo"
+        href="https://app.molten.bot/hub"
+        target="_blank"
+        rel="noreferrer noopener"
+        aria-label="Open Molten Bot Hub in a new window"
+        title="Open Molten Bot Hub in a new window">
+        <span class="prompt-mode-link-shell" aria-hidden="true"></span>
+        <span class="prompt-mode-link-icon" aria-hidden="true">
+          <img src="/static/logo.svg" alt="" aria-hidden="true">
+        </span>
+        <span class="prompt-mode-link-line prompt-mode-link-line-top" aria-hidden="true"></span>
+        <span class="prompt-mode-link-line prompt-mode-link-line-bottom" aria-hidden="true"></span>
+        <span class="prompt-mode-mobile-label" aria-hidden="true">Hub</span>
+        <span class="prompt-mode-link-tooltip" aria-hidden="true">Molten Hub</span>
+        <span class="sr-only">Molten Bot Hub</span>
+      </a>
+      <span class="prompt-mode-divider" aria-hidden="true"></span>
+      <button id="theme-toggle" class="prompt-mode-link theme-toggle theme-toggle-dock" type="button" aria-label="Switch theme. Currently: Dark" title="Dark">
+        <span class="prompt-mode-link-shell" aria-hidden="true"></span>
+        <span class="theme-toggle-icon" id="theme-toggle-icon" aria-hidden="true"></span>
+        <span class="prompt-mode-link-line prompt-mode-link-line-top" aria-hidden="true"></span>
+        <span class="prompt-mode-link-line prompt-mode-link-line-bottom" aria-hidden="true"></span>
+        <span class="prompt-mode-mobile-label" aria-hidden="true">Theme</span>
+        <span class="prompt-mode-link-tooltip" id="theme-toggle-tooltip" aria-hidden="true">Dark</span>
+        <span id="theme-toggle-label">Dark</span>
+      </button>
+    </div>
+  </div>
   <script src="/static/lucide.min.js"></script>
   <script>
     window.lucide && window.lucide.createIcons();
     (() => {
+      const themeToggleButton = document.getElementById("theme-toggle");
+      const themeToggleLabel = document.getElementById("theme-toggle-label");
+      const themeToggleIcon = document.getElementById("theme-toggle-icon");
+      const themeToggleTooltip = document.getElementById("theme-toggle-tooltip");
       const bindForm = document.getElementById("bind-form");
       const modeField = document.getElementById("onboarding-mode-field");
       const tokenInput = document.getElementById("onboarding-token-input");
@@ -154,6 +190,15 @@
       const PANEL_ESTIMATED_HEIGHT = 430;
       const PANEL_ANIMATION_DURATION_MS = 180;
       const DEFAULT_EMOJI = "🙂";
+      const THEME_KEY = "hubui.theme";
+      const THEME_MODES = ["light", "dark", "night", "pink"];
+      const DEFAULT_THEME_MODE = "dark";
+      const THEME_ICONS = {
+        light: "sun",
+        dark: "moon",
+        night: "star",
+        pink: "heart",
+      };
       const PROFILE_EMOJI_GROUPS = [
         {
           label: "Smileys",
@@ -221,6 +266,74 @@
         }
         const target = event.target;
         return target instanceof Node && node.contains(target);
+      };
+      const loadThemeMode = () => {
+        try {
+          const raw = localStorage.getItem(THEME_KEY);
+          return THEME_MODES.includes(raw) ? raw : DEFAULT_THEME_MODE;
+        } catch (_err) {
+          return DEFAULT_THEME_MODE;
+        }
+      };
+      const themeLabel = (theme) => {
+        const normalized = THEME_MODES.includes(theme) ? theme : DEFAULT_THEME_MODE;
+        return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+      };
+      const currentThemeMode = () => {
+        const activeTheme = document.documentElement.getAttribute("data-theme");
+        return THEME_MODES.includes(activeTheme) ? activeTheme : loadThemeMode();
+      };
+      const nextThemeMode = (theme) => {
+        const currentIndex = THEME_MODES.indexOf(theme);
+        const safeIndex = currentIndex >= 0 ? currentIndex : Math.max(0, THEME_MODES.indexOf(DEFAULT_THEME_MODE));
+        return THEME_MODES[(safeIndex + 1) % THEME_MODES.length];
+      };
+      const syncThemeToggle = (theme) => {
+        if (!themeToggleButton || !themeToggleLabel || !themeToggleIcon) {
+          return;
+        }
+        const currentTheme = THEME_MODES.includes(theme) ? theme : DEFAULT_THEME_MODE;
+        const currentLabel = themeLabel(currentTheme);
+        themeToggleLabel.textContent = currentLabel;
+        themeToggleIcon.replaceChildren();
+        const iconName = THEME_ICONS[currentTheme];
+        if (iconName) {
+          const icon = document.createElement("i");
+          icon.setAttribute("data-lucide", iconName);
+          icon.setAttribute("aria-hidden", "true");
+          icon.className = "theme-toggle-glyph";
+          themeToggleIcon.appendChild(icon);
+          window.lucide && window.lucide.createIcons({ icons: window.lucide.icons, attrs: { "stroke-width": 1.8 } });
+        }
+        if (themeToggleTooltip) {
+          themeToggleTooltip.textContent = currentLabel;
+        }
+        themeToggleButton.title = currentLabel;
+        themeToggleButton.setAttribute("aria-label", `Switch theme. Currently: ${currentLabel}`);
+      };
+      const applyThemeMode = (theme, persist) => {
+        const normalized = THEME_MODES.includes(theme) ? theme : DEFAULT_THEME_MODE;
+        const root = document.documentElement;
+        root.classList.remove("light", "dark", "night", "pink");
+        root.classList.add(normalized);
+        root.setAttribute("data-theme", normalized);
+        syncThemeToggle(normalized);
+        if (!persist) {
+          return;
+        }
+        try {
+          localStorage.setItem(THEME_KEY, normalized);
+        } catch (_err) {
+          // Ignore localStorage failures.
+        }
+      };
+      const initAppearanceControls = () => {
+        applyThemeMode(loadThemeMode(), false);
+        if (themeToggleButton) {
+          themeToggleButton.addEventListener("click", () => {
+            applyThemeMode(nextThemeMode(currentThemeMode()), true);
+          });
+        }
       };
       let closeActiveEmojiPicker = null;
       const applyTokenMode = () => {
@@ -472,6 +585,7 @@
           initHubEmojiPicker(picker);
         }
       });
+      initAppearanceControls();
       applyTokenMode();
     })();
   </script>
