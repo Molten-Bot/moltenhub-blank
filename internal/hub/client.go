@@ -327,26 +327,48 @@ func (c *Client) newRequest(ctx context.Context, method, endpoint, token string,
 
 func parseBindResponsePayload(payload json.RawMessage) (BindResponse, error) {
 	payload = coalesceRaw(payload)
-	var out BindResponse
-	if err := json.Unmarshal(payload, &out); err == nil && strings.TrimSpace(out.AgentToken) != "" {
+	out, err := decodeBindResponse(payload)
+	if err == nil && strings.TrimSpace(out.AgentToken) != "" {
 		normalizeBindEndpoints(&out)
 		return out, nil
 	}
 	var wrapped struct {
-		Agent BindResponse `json:"agent"`
-		Token string       `json:"agent_token"`
+		Agent      json.RawMessage `json:"agent"`
+		AgentToken string          `json:"agent_token"`
+		Token      string          `json:"token"`
 	}
 	if err := json.Unmarshal(payload, &wrapped); err != nil {
 		return BindResponse{}, fmt.Errorf("decode bind response: %w", err)
 	}
-	out = wrapped.Agent
+	if len(bytes.TrimSpace(wrapped.Agent)) > 0 {
+		out, err = decodeBindResponse(wrapped.Agent)
+		if err != nil {
+			return BindResponse{}, fmt.Errorf("decode bind response: %w", err)
+		}
+	}
 	if out.AgentToken == "" {
-		out.AgentToken = wrapped.Token
+		out.AgentToken = coalesceString(wrapped.AgentToken, wrapped.Token)
 	}
 	if strings.TrimSpace(out.AgentToken) == "" {
 		return BindResponse{}, errors.New("bind response missing agent token")
 	}
 	normalizeBindEndpoints(&out)
+	return out, nil
+}
+
+func decodeBindResponse(payload json.RawMessage) (BindResponse, error) {
+	var out BindResponse
+	if err := json.Unmarshal(payload, &out); err != nil {
+		return BindResponse{}, err
+	}
+	var aliases struct {
+		AgentToken string `json:"agent_token"`
+		Token      string `json:"token"`
+	}
+	if err := json.Unmarshal(payload, &aliases); err != nil {
+		return BindResponse{}, err
+	}
+	out.AgentToken = coalesceString(out.AgentToken, aliases.AgentToken, aliases.Token)
 	return out, nil
 }
 
