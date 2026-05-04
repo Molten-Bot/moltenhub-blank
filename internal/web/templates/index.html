@@ -128,7 +128,13 @@
       const handleField = document.getElementById("onboarding-handle-field");
       const submitLabel = bindForm ? bindForm.querySelector(".primary-button span") : null;
       const bound = bindForm instanceof HTMLFormElement && bindForm.dataset.bound === "true";
-      const tokenMode = (value) => String(value || "").trim().toLowerCase().startsWith("b_") ? "new" : "existing";
+      const tokenMode = (value) => {
+        const token = String(value || "").trim().toLowerCase();
+        if (token === "" || token.startsWith("t_")) {
+          return "existing";
+        }
+        return "new";
+      };
       const applyTokenMode = () => {
         const mode = tokenInput instanceof HTMLInputElement ? tokenMode(tokenInput.value) : "existing";
         const isNew = mode === "new";
