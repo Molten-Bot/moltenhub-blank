@@ -229,15 +229,39 @@ func runtimeFromEnv() (HubRuntime, error, bool) {
 		return HubRuntime{}, nil, false
 	}
 	runtime, err := ResolveHubRuntime(region, "")
+	if err != nil {
+		return HubRuntime{}, fmt.Errorf("%s=%q: %w", moltenHubRegionEnvVar, region, err), true
+	}
 	return runtime, err, true
 }
 
 func envValue(name string) (string, bool) {
-	value, ok := os.LookupEnv(name)
-	if !ok {
-		return "", false
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		return colonEnvValue(name)
 	}
-	return strings.TrimSpace(normalizeEnvAssignmentValue(value)), true
+	return strings.TrimSpace(normalizeEnvAssignmentValue(name, value)), true
+}
+
+func colonEnvValue(name string) (string, bool) {
+	prefix := name + ":"
+	for _, entry := range os.Environ() {
+		if !strings.HasPrefix(entry, prefix) {
+			continue
+		}
+		value := strings.TrimPrefix(entry, prefix)
+		if beforeEquals, _, found := strings.Cut(value, "="); found {
+			if trimmed := strings.TrimSpace(beforeEquals); trimmed != "" {
+				return trimmed, true
+			}
+			value = strings.TrimPrefix(value, beforeEquals+"=")
+		}
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value, true
+		}
+	}
+	return "", false
 }
 
 func envOrDefault(name, fallback string) string {
@@ -247,10 +271,11 @@ func envOrDefault(name, fallback string) string {
 	return fallback
 }
 
-func normalizeEnvAssignmentValue(value string) string {
+func normalizeEnvAssignmentValue(name, value string) string {
 	value = strings.TrimSpace(value)
-	if idx := strings.Index(value, ":"); idx > 0 && !strings.Contains(value[:idx], "/") {
-		return strings.TrimSpace(value[idx+1:])
+	prefix, rest, ok := strings.Cut(value, ":")
+	if ok && strings.EqualFold(strings.TrimSpace(prefix), strings.TrimSpace(name)) {
+		return strings.TrimSpace(rest)
 	}
 	return value
 }

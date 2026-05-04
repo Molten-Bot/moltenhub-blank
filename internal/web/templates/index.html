@@ -27,7 +27,8 @@
         <p class="eyebrow">Connection</p>
         <h2>Hub Configuration</h2>
       </div>
-      <form method="post" action="/bind" class="form-grid">
+      <form method="post" action="/bind" class="form-grid" id="bind-form" data-bound="{{if .State.Session.AgentToken}}true{{else}}false{{end}}">
+        <input id="onboarding-mode-field" type="hidden" name="agent_mode" value="existing">
         <label>
           <span>Hub</span>
           <select name="hub_region">
@@ -36,18 +37,12 @@
             {{end}}
           </select>
         </label>
-        <label>
-          <span>Mode</span>
-          <select name="agent_mode">
-            <option value="new">Bind token</option>
-            <option value="existing">Agent token</option>
-          </select>
+        <label id="onboarding-token-field">
+          <span id="onboarding-token-label">Agent Token</span>
+          <input id="onboarding-token-input" type="password" name="bind_token" placeholder="Paste agent token" autocomplete="off" inputmode="text" autocapitalize="off" autocorrect="off" spellcheck="false">
+          <small id="onboarding-token-hint" class="token-hint">Use the agent token from Molten Hub. Paste a b_ token to bind a new agent.</small>
         </label>
-        <label>
-          <span>Token</span>
-          <input type="password" name="bind_token" placeholder="b_... or t_..." autocomplete="off">
-        </label>
-        <label>
+        <label id="onboarding-handle-field" hidden>
           <span>Handle</span>
           <input name="handle" value="{{.State.Session.Handle}}" placeholder="optional">
         </label>
@@ -122,6 +117,50 @@
     </section>
   </main>
   <script src="/static/lucide.min.js"></script>
-  <script>window.lucide && window.lucide.createIcons();</script>
+  <script>
+    window.lucide && window.lucide.createIcons();
+    (() => {
+      const bindForm = document.getElementById("bind-form");
+      const modeField = document.getElementById("onboarding-mode-field");
+      const tokenInput = document.getElementById("onboarding-token-input");
+      const tokenLabel = document.getElementById("onboarding-token-label");
+      const tokenHint = document.getElementById("onboarding-token-hint");
+      const handleField = document.getElementById("onboarding-handle-field");
+      const submitLabel = bindForm ? bindForm.querySelector(".primary-button span") : null;
+      const bound = bindForm instanceof HTMLFormElement && bindForm.dataset.bound === "true";
+      const tokenMode = (value) => String(value || "").trim().toLowerCase().startsWith("b_") ? "new" : "existing";
+      const applyTokenMode = () => {
+        const mode = tokenInput instanceof HTMLInputElement ? tokenMode(tokenInput.value) : "existing";
+        const isNew = mode === "new";
+        if (modeField instanceof HTMLInputElement) {
+          modeField.value = mode;
+        }
+        if (tokenLabel) {
+          tokenLabel.textContent = isNew ? "Bind Token" : "Agent Token";
+        }
+        if (tokenInput instanceof HTMLInputElement) {
+          tokenInput.placeholder = isNew ? "Paste bind token" : "Paste agent token";
+        }
+        if (tokenHint) {
+          tokenHint.textContent = isNew
+            ? "Use a bind token from Molten Hub. Handle is sent only during first bind."
+            : "Use an existing agent token from Molten Hub.";
+        }
+        if (handleField instanceof HTMLElement) {
+          handleField.hidden = bound || !isNew;
+        }
+        if (submitLabel) {
+          submitLabel.textContent = isNew ? "Bind" : "Connect";
+        }
+      };
+      if (tokenInput instanceof HTMLInputElement) {
+        tokenInput.addEventListener("input", applyTokenMode);
+      }
+      if (bindForm instanceof HTMLFormElement) {
+        bindForm.addEventListener("submit", applyTokenMode);
+      }
+      applyTokenMode();
+    })();
+  </script>
 </body>
 </html>

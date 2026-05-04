@@ -49,30 +49,88 @@ func WrapOnboardingError(stage string, err error) error {
 }
 
 func OnboardingStageFromError(err error) string {
+	if err == nil {
+		return ""
+	}
 	var onboardingErr *OnboardingError
-	if errors.As(err, &onboardingErr) && strings.TrimSpace(onboardingErr.Stage) != "" {
-		return strings.TrimSpace(onboardingErr.Stage)
+	if errors.As(err, &onboardingErr) {
+		stage := strings.TrimSpace(onboardingErr.Stage)
+		if stage != "" {
+			return stage
+		}
 	}
 	return OnboardingStepBind
+}
+
+func NormalizeOnboardingMode(mode, bindToken, agentToken string) string {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	switch mode {
+	case OnboardingModeNew:
+		return OnboardingModeNew
+	case OnboardingModeExisting:
+		return OnboardingModeExisting
+	}
+	if strings.TrimSpace(bindToken) != "" && strings.TrimSpace(agentToken) == "" {
+		return OnboardingModeNew
+	}
+	return OnboardingModeExisting
+}
+
+func OnboardingModeFromToken(token string) string {
+	token = strings.TrimSpace(token)
+	if strings.HasPrefix(strings.ToLower(token), "b_") {
+		return OnboardingModeNew
+	}
+	return OnboardingModeExisting
+}
+
+func onboardingTokenHasModePrefix(token string) bool {
+	token = strings.ToLower(strings.TrimSpace(token))
+	return strings.HasPrefix(token, "b_") || strings.HasPrefix(token, "t_")
 }
 
 func NormalizeOnboardingTokens(mode, bindToken, agentToken string) (string, string, string) {
 	bindToken = strings.TrimSpace(bindToken)
 	agentToken = strings.TrimSpace(agentToken)
-	submitted := bindToken
-	if submitted == "" {
-		submitted = agentToken
+	mode = strings.ToLower(strings.TrimSpace(mode))
+
+	submittedToken := bindToken
+	if submittedToken == "" {
+		submittedToken = agentToken
 	}
-	if strings.HasPrefix(strings.ToLower(submitted), "b_") {
-		return OnboardingModeNew, submitted, ""
+	if submittedToken != "" && onboardingTokenHasModePrefix(submittedToken) {
+		resolvedMode := OnboardingModeFromToken(submittedToken)
+		if resolvedMode == OnboardingModeNew {
+			return OnboardingModeNew, submittedToken, ""
+		}
+		return OnboardingModeExisting, "", submittedToken
 	}
-	if submitted != "" {
-		return OnboardingModeExisting, "", submitted
-	}
-	if strings.EqualFold(strings.TrimSpace(mode), OnboardingModeNew) {
+	switch mode {
+	case OnboardingModeNew:
+		if submittedToken != "" {
+			return OnboardingModeNew, submittedToken, ""
+		}
 		return OnboardingModeNew, bindToken, ""
+	case OnboardingModeExisting:
+		if submittedToken != "" {
+			return OnboardingModeExisting, "", submittedToken
+		}
+		return OnboardingModeExisting, "", agentToken
 	}
-	return OnboardingModeExisting, "", agentToken
+
+	if submittedToken != "" {
+		resolvedMode := OnboardingModeFromToken(submittedToken)
+		if resolvedMode == OnboardingModeNew {
+			return resolvedMode, submittedToken, ""
+		}
+		return resolvedMode, "", submittedToken
+	}
+
+	resolvedMode := NormalizeOnboardingMode(mode, bindToken, agentToken)
+	if resolvedMode == OnboardingModeNew {
+		return resolvedMode, bindToken, ""
+	}
+	return resolvedMode, "", agentToken
 }
 
 func DefaultOnboardingStepsForMode(mode string) []OnboardingStep {

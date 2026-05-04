@@ -1,20 +1,35 @@
 package app
 
 import (
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 )
 
+func newLoopbackServer(t *testing.T, handler http.Handler) *httptest.Server {
+	t.Helper()
+
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen on 127.0.0.1:0: %v", err)
+	}
+
+	server := httptest.NewUnstartedServer(handler)
+	server.Listener = listener
+	server.Start()
+	t.Cleanup(server.Close)
+	return server
+}
+
 func TestFetchHubRuntimeCatalog(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newLoopbackServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`[
-			{"display":"North America","key":"na","domain":"na.hub.molten.bot"},
-			{"display":"Europe","key":"eu","domain":"eu.hub.molten.bot"},
-			{"display":"Bad","key":"bad","domain":"example.com"}
-		]`))
+				{"display":"North America","key":"na","domain":"na.hub.molten.bot"},
+				{"display":"Europe","key":"eu","domain":"eu.hub.molten.bot"},
+				{"display":"Bad","key":"bad","domain":"example.com"}
+			]`))
 	}))
-	defer server.Close()
 
 	runtimes, err := fetchHubRuntimeCatalog(server.URL, server.Client())
 	if err != nil {

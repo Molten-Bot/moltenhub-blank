@@ -204,6 +204,9 @@ func (s *Service) connectExistingAgent(ctx context.Context, runtime HubRuntime, 
 	}
 	s.noteHubInteraction(nil, ConnectionTransportHTTP)
 	identity := identityFromCapabilities(capabilities)
+	profile.DisplayName = strings.TrimSpace(profile.DisplayName)
+	profile.Emoji = strings.TrimSpace(profile.Emoji)
+	profile.ProfileMarkdown = strings.TrimSpace(profile.ProfileMarkdown)
 	session := Session{
 		BoundAt:     time.Now().UTC(),
 		HubURL:      runtime.HubURL,
@@ -220,10 +223,17 @@ func (s *Service) connectExistingAgent(ctx context.Context, runtime HubRuntime, 
 	if err := s.storeConnectedSession(runtime, session); err != nil {
 		return WrapOnboardingError(OnboardingStepBind, err)
 	}
-	if err := s.updateAgentProfile(ctx, agentToken, AgentProfile{DisplayName: session.DisplayName, Emoji: session.Emoji, ProfileMarkdown: session.ProfileBio}); err != nil {
-		s.noteHubInteraction(err, ConnectionTransportHTTP)
-		return WrapOnboardingError(OnboardingStepProfileSet, fmt.Errorf("existing agent verified, but profile registration failed: %w", err))
+	if profile.DisplayName != "" || profile.Emoji != "" || profile.ProfileMarkdown != "" {
+		if err := s.updateAgentProfile(ctx, agentToken, AgentProfile{DisplayName: profile.DisplayName, Emoji: profile.Emoji, ProfileMarkdown: profile.ProfileMarkdown}); err != nil {
+			s.noteHubInteraction(err, ConnectionTransportHTTP)
+			return WrapOnboardingError(OnboardingStepProfileSet, fmt.Errorf("existing agent verified, but profile registration failed: %w", err))
+		}
 	}
+	if _, err := s.hub.GetCapabilities(ctx, agentToken); err != nil {
+		s.noteHubInteraction(err, ConnectionTransportHTTP)
+		return WrapOnboardingError(OnboardingStepWorkActivate, fmt.Errorf("existing agent connected, but activation check failed: %w", err))
+	}
+	s.noteHubInteraction(nil, ConnectionTransportHTTP)
 	_ = s.logEvent("info", "Existing agent connected", "Blank app credential verified against "+apiBase)
 	return nil
 }
@@ -255,6 +265,10 @@ func (s *Service) ConnectFromEnvIfNeeded(ctx context.Context) error {
 		_ = s.SetFlash("error", err.Error())
 		return err
 	}
+	mode, bindToken, agentToken := NormalizeOnboardingTokens("", token, "")
+	if mode != OnboardingModeExisting && strings.TrimSpace(s.store.Snapshot().Session.AgentToken) != "" {
+		return nil
+	}
 	if err := s.UpdateSettings(func(settings *Settings) error {
 		settings.HubRegion = runtime.ID
 		settings.HubURL = runtime.HubURL
@@ -262,14 +276,17 @@ func (s *Service) ConnectFromEnvIfNeeded(ctx context.Context) error {
 	}); err != nil {
 		return err
 	}
-	mode, bindToken, agentToken := NormalizeOnboardingTokens("", token, "")
 	err = s.BindAndRegister(ctx, BindProfile{AgentMode: mode, BindToken: bindToken, AgentToken: agentToken})
 	if err != nil {
 		err = fmt.Errorf("automatic hub connection from %s failed: %w", moltenHubTokenEnvVar, err)
 		_ = s.SetFlash("error", err.Error())
 		return err
 	}
-	_ = s.SetFlash("info", "Hub connected from "+moltenHubTokenEnvVar+".")
+	message := "Agent bound from " + moltenHubTokenEnvVar + "."
+	if mode == OnboardingModeExisting {
+		message = "Existing agent connected from " + moltenHubTokenEnvVar + "."
+	}
+	_ = s.SetFlash("info", message)
 	return nil
 }
 

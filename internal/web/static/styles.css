@@ -6366,6 +6366,10 @@ pre {
   gap: 7px;
 }
 
+.form-grid label[hidden] {
+  display: none !important;
+}
+
 .form-grid label span,
 .detail-list dt {
   color: var(--muted);
@@ -6384,6 +6388,12 @@ pre {
   color: var(--text);
   font: inherit;
   padding: 10px 12px;
+}
+
+.token-hint {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .span-2 {
