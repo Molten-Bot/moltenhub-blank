@@ -20,14 +20,10 @@
     <header class="page-header">
       <div class="brand-lockup">
         <img id="moltenhub-logo" class="brand-logo brand-logo-visible" src="/static/logo.svg" alt="">
-        <div>
-          <p class="eyebrow">Molten Hub</p>
-          <h1>Blank</h1>
+        <div class="brand-copy">
+          <h1>Molten Hub Blank</h1>
+          <p>Your gateway to agent onboarding on Molten Hub!</p>
         </div>
-      </div>
-      <div class="connection-pill {{if eq .State.Connection.Status "connected"}}is-online{{else}}is-offline{{end}}">
-        <span class="status-dot"></span>
-        <span>{{.State.Connection.Transport}}</span>
       </div>
     </header>
 
