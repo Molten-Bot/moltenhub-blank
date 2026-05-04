@@ -248,6 +248,7 @@ func (s *Server) renderIndex(w http.ResponseWriter, flash string) {
 		State:           state,
 		Flash:           flash,
 		IsError:         isError,
+		Connected:       strings.TrimSpace(state.Session.AgentToken) != "" && state.Connection.Status == app.ConnectionStatusConnected,
 		RuntimeOptions:  app.SupportedHubRuntimes(),
 		SelectedRuntime: selected,
 		Onboarding:      onboardingViewFromState(state, ""),
@@ -287,6 +288,7 @@ type pageData struct {
 	State           app.AppState
 	Flash           string
 	IsError         bool
+	Connected       bool
 	RuntimeOptions  []app.HubRuntime
 	SelectedRuntime app.HubRuntime
 	Onboarding      onboardingView
