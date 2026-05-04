@@ -60,7 +60,7 @@
         </label>
         <div class="button-row span-2">
           <button type="submit" class="primary-button"><i data-lucide="plug"></i><span>Connect</span></button>
-          {{if .State.Session.AgentToken}}
+          {{if .Connected}}
           <button type="submit" formaction="/disconnect" class="secondary-button"><i data-lucide="unplug"></i><span>Disconnect</span></button>
           {{end}}
         </div>
