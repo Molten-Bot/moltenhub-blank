@@ -307,7 +307,11 @@ func (c *Client) newRequest(ctx context.Context, method, endpoint, token string,
 			query = endpoint[idx+1:]
 			endpoint = endpoint[:idx]
 		}
-		u.Path = joinURLPath(u.Path, endpoint)
+		if strings.HasPrefix(endpoint, "/") {
+			u.Path = path.Clean(endpoint)
+		} else {
+			u.Path = joinURLPath(u.Path, endpoint)
+		}
 		u.RawQuery = query
 	}
 	req, err := http.NewRequestWithContext(ctx, method, u.String(), reader)

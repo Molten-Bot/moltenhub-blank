@@ -1,7 +1,9 @@
 package hub
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
 	"testing"
 )
 
@@ -60,5 +62,29 @@ func TestDeliveryEndpointFromPull(t *testing.T) {
 	want := "https://na.hub.molten.bot/v1/openclaw/messages/ack"
 	if got != want {
 		t.Fatalf("deliveryEndpointFromPull() = %q, want %q", got, want)
+	}
+}
+
+func TestNewRequestAbsoluteEndpointIgnoresBasePath(t *testing.T) {
+	client := NewClient("https://na.hub.molten.bot/api")
+
+	req, err := client.newRequest(context.Background(), http.MethodPatch, "/v1/agents/me/metadata", "t_123", nil)
+	if err != nil {
+		t.Fatalf("newRequest() error = %v", err)
+	}
+	if got, want := req.URL.String(), "https://na.hub.molten.bot/v1/agents/me/metadata"; got != want {
+		t.Fatalf("request URL = %q, want %q", got, want)
+	}
+}
+
+func TestNewRequestRelativeEndpointKeepsBasePath(t *testing.T) {
+	client := NewClient("https://na.hub.molten.bot/api")
+
+	req, err := client.newRequest(context.Background(), http.MethodGet, "health", "", nil)
+	if err != nil {
+		t.Fatalf("newRequest() error = %v", err)
+	}
+	if got, want := req.URL.String(), "https://na.hub.molten.bot/api/health"; got != want {
+		t.Fatalf("request URL = %q, want %q", got, want)
 	}
 }
