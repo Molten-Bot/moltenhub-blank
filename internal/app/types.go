@@ -18,13 +18,12 @@ const (
 )
 
 type Settings struct {
-	ListenAddr                   string        `json:"listen_addr"`
-	HubRegion                    string        `json:"hub_region"`
-	HubURL                       string        `json:"hub_url"`
-	SessionKey                   string        `json:"session_key"`
-	PollInterval                 time.Duration `json:"poll_interval"`
-	DataDir                      string        `json:"data_dir"`
-	GoogleAnalyticsMeasurementID string        `json:"google_analytics_measurement_id,omitempty"`
+	ListenAddr   string        `json:"listen_addr"`
+	HubRegion    string        `json:"hub_region"`
+	HubURL       string        `json:"hub_url"`
+	SessionKey   string        `json:"session_key"`
+	PollInterval time.Duration `json:"poll_interval"`
+	DataDir      string        `json:"data_dir"`
 }
 
 type Session struct {

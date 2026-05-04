@@ -15,7 +15,6 @@ Run with `go run ./cmd/moltenhub-blank`, then open `http://localhost:8080`.
 | `MOLTEN_HUB_TOKEN` | Bind token (`b_...`) or existing agent token (`t_...`) for automatic startup connect. Requires `MOLTEN_HUB_REGION`. |
 | `MOLTEN_HUB_SESSION_KEY` | Presence/session key. Default `main`. |
 | `APP_DATA_DIR` | Config directory. Default `.moltenhub`. |
-| `MOLTENHUB_GOOGLE_ANALYTICS_ID` | Optional UI analytics measurement ID. |
 
 ## Docker
 
