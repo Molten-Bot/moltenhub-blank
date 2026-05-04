@@ -245,13 +245,12 @@ func (s *Server) renderIndex(w http.ResponseWriter, flash string) {
 		selected = app.DefaultHubRuntime()
 	}
 	view := pageData{
-		State:                        state,
-		Flash:                        flash,
-		IsError:                      isError,
-		RuntimeOptions:               app.SupportedHubRuntimes(),
-		SelectedRuntime:              selected,
-		Onboarding:                   onboardingViewFromState(state, ""),
-		GoogleAnalyticsMeasurementID: strings.TrimSpace(state.Settings.GoogleAnalyticsMeasurementID),
+		State:           state,
+		Flash:           flash,
+		IsError:         isError,
+		RuntimeOptions:  app.SupportedHubRuntimes(),
+		SelectedRuntime: selected,
+		Onboarding:      onboardingViewFromState(state, ""),
 	}
 	var rendered bytes.Buffer
 	if err := s.templates.ExecuteTemplate(&rendered, "index.html", view); err != nil {
@@ -285,13 +284,12 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 }
 
 type pageData struct {
-	State                        app.AppState
-	Flash                        string
-	IsError                      bool
-	RuntimeOptions               []app.HubRuntime
-	SelectedRuntime              app.HubRuntime
-	Onboarding                   onboardingView
-	GoogleAnalyticsMeasurementID string
+	State           app.AppState
+	Flash           string
+	IsError         bool
+	RuntimeOptions  []app.HubRuntime
+	SelectedRuntime app.HubRuntime
+	Onboarding      onboardingView
 }
 
 type onboardingView struct {

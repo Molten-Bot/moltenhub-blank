@@ -14,11 +14,10 @@ import (
 )
 
 const (
-	defaultDataDir                  = ".moltenhub"
-	defaultGoogleAnalyticsMeasureID = "G-BY33RFG2WB"
-	moltenHubRegionEnvVar           = "MOLTEN_HUB_REGION"
-	moltenHubTokenEnvVar            = "MOLTEN_HUB_TOKEN"
-	maxRecentEvents                 = 40
+	defaultDataDir        = ".moltenhub"
+	moltenHubRegionEnvVar = "MOLTEN_HUB_REGION"
+	moltenHubTokenEnvVar  = "MOLTEN_HUB_TOKEN"
+	maxRecentEvents       = 40
 )
 
 type Store struct {
@@ -45,13 +44,12 @@ type persistedSession struct {
 func DefaultSettings() Settings {
 	runtime := defaultRuntimeFromEnv()
 	return Settings{
-		ListenAddr:                   envOrDefault("LISTEN_ADDR", ":8080"),
-		HubRegion:                    runtime.ID,
-		HubURL:                       runtime.HubURL,
-		SessionKey:                   envOrDefault("MOLTEN_HUB_SESSION_KEY", "main"),
-		PollInterval:                 2 * time.Second,
-		DataDir:                      envOrDefault("APP_DATA_DIR", defaultDataDir),
-		GoogleAnalyticsMeasurementID: envOrDefault("MOLTENHUB_GOOGLE_ANALYTICS_ID", defaultGoogleAnalyticsMeasureID),
+		ListenAddr:   envOrDefault("LISTEN_ADDR", ":8080"),
+		HubRegion:    runtime.ID,
+		HubURL:       runtime.HubURL,
+		SessionKey:   envOrDefault("MOLTEN_HUB_SESSION_KEY", "main"),
+		PollInterval: 2 * time.Second,
+		DataDir:      envOrDefault("APP_DATA_DIR", defaultDataDir),
 	}
 }
 
@@ -181,11 +179,6 @@ func mergeDefaultSettings(settings *Settings, defaults Settings) {
 		settings.DataDir = value
 	} else if settings.DataDir == "" {
 		settings.DataDir = defaults.DataDir
-	}
-	if value, ok := envValue("MOLTENHUB_GOOGLE_ANALYTICS_ID"); ok {
-		settings.GoogleAnalyticsMeasurementID = value
-	} else if settings.GoogleAnalyticsMeasurementID == "" {
-		settings.GoogleAnalyticsMeasurementID = defaults.GoogleAnalyticsMeasurementID
 	}
 }
 
