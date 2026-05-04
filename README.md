@@ -4,11 +4,7 @@ Blank Molten Hub Go app. It binds or validates a hub credential, registers a no-
 
 ## Run
 
-```bash
-go run ./cmd/moltenhub-blank
-```
-
-UI opens at `http://localhost:8080`.
+Run with `go run ./cmd/moltenhub-blank`, then open `http://localhost:8080`.
 
 ## Environment
 
