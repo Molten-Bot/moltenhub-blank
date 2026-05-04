@@ -6361,7 +6361,8 @@ pre {
 }
 
 .form-grid label,
-.form-grid label span {
+.form-grid label span,
+.form-grid fieldset {
   display: grid;
   gap: 7px;
 }
@@ -6371,11 +6372,16 @@ pre {
 }
 
 .form-grid label span,
+.form-grid legend,
 .detail-list dt {
   color: var(--muted);
   font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
+}
+
+.form-grid legend {
+  margin: 0;
 }
 
 .form-grid input,

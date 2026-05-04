@@ -50,10 +50,30 @@
           <span>Display Name</span>
           <input name="display_name" value="{{if .State.Session.DisplayName}}{{.State.Session.DisplayName}}{{else}}Molten Hub Blank{{end}}">
         </label>
-        <label>
-          <span>Emoji</span>
-          <input name="emoji" value="{{if .State.Session.Emoji}}{{.State.Session.Emoji}}{{else}}*{{end}}">
-        </label>
+        <fieldset class="emoji-fieldset">
+          <legend>Emoji</legend>
+          <div class="hub-emoji-picker" data-hub-emoji-picker id="agent-settings-emoji-picker">
+            <input type="hidden" name="emoji" value="{{if .State.Session.Emoji}}{{.State.Session.Emoji}}{{else}}🤖{{end}}" data-hub-emoji-input>
+            <button
+              type="button"
+              class="hub-emoji-picker-toggle"
+              data-hub-emoji-toggle
+              aria-haspopup="dialog"
+              aria-expanded="false"
+              aria-label="Choose emoji"
+              title="Choose emoji"
+            >
+              <span class="hub-emoji-picker-toggle-preview" data-hub-emoji-preview>{{if .State.Session.Emoji}}{{.State.Session.Emoji}}{{else}}🤖{{end}}</span>
+            </button>
+            <div class="hub-emoji-picker-panel" data-hub-emoji-panel hidden>
+              <div class="hub-emoji-picker-panel-header">
+                <p class="hub-emoji-picker-label">Pick one emoji</p>
+                <button type="button" class="hub-emoji-picker-clear" data-hub-emoji-clear>Clear</button>
+              </div>
+              <div class="hub-emoji-picker-mart" data-hub-emoji-mart-root aria-live="polite"></div>
+            </div>
+          </div>
+        </fieldset>
         <label class="span-2">
           <span>Profile</span>
           <textarea name="profile_markdown" rows="3">{{if .State.Session.ProfileBio}}{{.State.Session.ProfileBio}}{{else}}Blank Molten Hub connectivity app.{{end}}</textarea>
@@ -128,6 +148,314 @@
       const handleField = document.getElementById("onboarding-handle-field");
       const submitLabel = bindForm ? bindForm.querySelector(".primary-button span") : null;
       const bound = bindForm instanceof HTMLFormElement && bindForm.dataset.bound === "true";
+      const VIEWPORT_GUTTER = 8;
+      const PANEL_OFFSET = 8;
+      const PANEL_MAX_WIDTH = 360;
+      const PANEL_ESTIMATED_HEIGHT = 430;
+      const PANEL_ANIMATION_DURATION_MS = 180;
+      const DEFAULT_EMOJI = "🙂";
+      const trackAppEvent = (_eventName, _params = {}) => {};
+      const PROFILE_EMOJI_GROUPS = [
+        {
+          label: "Smileys",
+          emoji: ["😀", "😃", "😄", "😁", "😆", "😅", "😂", "🙂", "🙃", "😉", "😊", "😇", "😍", "🤩", "😘", "😎", "🥳", "🤔", "🫡", "🤯", "😴", "😭", "😤", "😈"],
+        },
+        {
+          label: "People",
+          emoji: ["👋", "👏", "🙌", "🙏", "💪", "🦾", "👍", "👎", "✌️", "🤘", "👌", "🤌", "👀", "🧠", "🧑‍💻", "🧑‍🔬", "🧑‍🚀", "🧙", "🥷", "🦸", "🧟", "💃", "🕺", "🏃"],
+        },
+        {
+          label: "Nature",
+          emoji: ["🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐨", "🐯", "🦁", "🐮", "🐸", "🐵", "🐧", "🐦", "🦉", "🦋", "🌵", "🌲", "🌸", "🌈", "🌊", "🔥"],
+        },
+        {
+          label: "Food",
+          emoji: ["🍏", "🍎", "🍌", "🍓", "🍒", "🍑", "🍍", "🥝", "🥑", "🥕", "🌮", "🍕", "🍔", "🍟", "🍜", "🍣", "🍩", "🍪", "🍰", "☕", "🍺", "🍷", "🥂", "🍾"],
+        },
+        {
+          label: "Activity",
+          emoji: ["⚽", "🏀", "🏈", "⚾", "🎾", "🏐", "🎱", "🏓", "🥊", "🎮", "🎲", "🎯", "🎨", "🎬", "🎤", "🎧", "🎹", "🥁", "🎸", "🏆", "🥇", "🧩", "♟️", "🕹️"],
+        },
+        {
+          label: "Travel",
+          emoji: ["🚗", "🚕", "🚌", "🏎️", "🚓", "🚑", "🚒", "🚚", "🚲", "✈️", "🚀", "🛸", "🛰️", "⛵", "🚢", "🏠", "🏢", "🏰", "⛰️", "🏝️", "🌋", "🗺️", "🧭", "🧳"],
+        },
+        {
+          label: "Objects",
+          emoji: ["⌚", "📱", "💻", "⌨️", "🖥️", "🖨️", "📷", "📡", "💡", "🔦", "🧯", "🔋", "🪫", "🔌", "🧲", "🧪", "🧬", "🔬", "🔭", "🛠️", "⚙️", "🔧", "🔨", "🪛"],
+        },
+        {
+          label: "Symbols",
+          emoji: ["❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "💯", "💥", "💫", "💦", "✨", "⚡", "☀️", "🌙", "⭐", "🌟", "🔮", "✅", "❌", "⚠️", "♻️", "🔁"],
+        },
+        {
+          label: "Agent",
+          emoji: ["🤖", "🦾", "🧠", "🚀", "🛰️", "📡", "🧪", "🧬", "⚙️", "🛠️", "💡", "🔮", "🎯", "✨", "🔥", "⚡", "🌊", "🎛️", "🧭", "🧑‍💻", "🧑‍🔬", "🧑‍🚀", "🪄", "🏁"],
+        },
+      ];
+
+      const graphemeSegmenter = typeof Intl !== "undefined" && typeof Intl.Segmenter === "function"
+        ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
+        : null;
+
+      const firstEmojiGrapheme = (value) => {
+        const trimmed = String(value || "").trim();
+        if (!trimmed) {
+          return "";
+        }
+        if (graphemeSegmenter) {
+          const iterator = graphemeSegmenter.segment(trimmed)[Symbol.iterator]();
+          const first = iterator.next();
+          if (!first.done && first.value && typeof first.value.segment === "string") {
+            return first.value.segment;
+          }
+        }
+        const fallback = Array.from(trimmed);
+        return fallback.length ? fallback[0] : "";
+      };
+
+      const eventIncludesNode = (event, node) => {
+        if (!(node instanceof Node)) {
+          return false;
+        }
+        if (typeof event.composedPath === "function") {
+          const path = event.composedPath();
+          return path.some((entry) => entry === node || (entry instanceof Node && node.contains(entry)));
+        }
+        const target = event.target;
+        return target instanceof Node && node.contains(target);
+      };
+
+      let closeActiveEmojiPicker = null;
+
+      const initHubEmojiPicker = (root) => {
+        const input = root.querySelector("[data-hub-emoji-input]");
+        const toggle = root.querySelector("[data-hub-emoji-toggle]");
+        const preview = root.querySelector("[data-hub-emoji-preview]");
+        const panel = root.querySelector("[data-hub-emoji-panel]");
+        const clearButton = root.querySelector("[data-hub-emoji-clear]");
+        const pickerMount = root.querySelector("[data-hub-emoji-mart-root]");
+        if (
+          !(input instanceof HTMLInputElement) ||
+          !(toggle instanceof HTMLButtonElement) ||
+          !(preview instanceof HTMLElement) ||
+          !(panel instanceof HTMLElement) ||
+          !(clearButton instanceof HTMLButtonElement) ||
+          !(pickerMount instanceof HTMLElement)
+        ) {
+          return;
+        }
+
+        let open = false;
+        let pickerMounted = false;
+        let panelCloseTimer = 0;
+        if (panel.parentElement !== document.body) {
+          document.body.appendChild(panel);
+        }
+
+        const mountPicker = () => {
+          if (pickerMounted || !open) {
+            return;
+          }
+          pickerMount.innerHTML = "";
+          PROFILE_EMOJI_GROUPS.forEach((group) => {
+            if (!group || !Array.isArray(group.emoji) || group.emoji.length === 0) {
+              return;
+            }
+            const section = document.createElement("section");
+            section.className = "hub-emoji-picker-category";
+
+            const heading = document.createElement("p");
+            heading.className = "hub-emoji-picker-category-label";
+            heading.textContent = String(group.label || "Emoji");
+            section.appendChild(heading);
+
+            const grid = document.createElement("div");
+            grid.className = "hub-emoji-picker-grid";
+            group.emoji.forEach((emoji) => {
+              const emojiValue = firstEmojiGrapheme(emoji);
+              if (!emojiValue) {
+                return;
+              }
+              const option = document.createElement("button");
+              option.type = "button";
+              option.className = "hub-emoji-picker-option";
+              option.textContent = emojiValue;
+              option.setAttribute("aria-label", `Use ${emojiValue}`);
+              option.addEventListener("click", () => {
+                setEmojiValue(emojiValue, true);
+              });
+              grid.appendChild(option);
+            });
+            section.appendChild(grid);
+            pickerMount.appendChild(section);
+          });
+          pickerMounted = true;
+          window.requestAnimationFrame(positionPanel);
+        };
+
+        const syncSelectedState = () => {
+          const emojiValue = firstEmojiGrapheme(input.value);
+          if (emojiValue !== input.value) {
+            input.value = emojiValue;
+          }
+          const previewEmoji = emojiValue || DEFAULT_EMOJI;
+          preview.textContent = previewEmoji;
+        };
+
+        const positionPanel = () => {
+          if (!open) {
+            return;
+          }
+          const rect = root.getBoundingClientRect();
+          const viewportWidth = window.innerWidth;
+          const maxPanelWidth = Math.max(240, viewportWidth - VIEWPORT_GUTTER * 2);
+          const panelWidth = Math.min(PANEL_MAX_WIDTH, maxPanelWidth);
+          const maxLeft = Math.max(VIEWPORT_GUTTER, viewportWidth - panelWidth - VIEWPORT_GUTTER);
+          const left = Math.min(Math.max(rect.left, VIEWPORT_GUTTER), maxLeft);
+
+          const spaceBelow = window.innerHeight - rect.bottom - VIEWPORT_GUTTER;
+          const spaceAbove = rect.top - VIEWPORT_GUTTER;
+          const placeBelow = spaceBelow >= PANEL_ESTIMATED_HEIGHT || spaceBelow >= spaceAbove;
+          panel.dataset.placement = placeBelow ? "bottom" : "top";
+
+          panel.style.left = `${left}px`;
+          panel.style.width = `min(${PANEL_MAX_WIDTH}px, calc(100vw - ${VIEWPORT_GUTTER * 2}px))`;
+          panel.style.maxHeight = `calc(100vh - ${VIEWPORT_GUTTER * 2}px)`;
+          panel.style.top = "auto";
+          panel.style.bottom = "auto";
+          if (placeBelow) {
+            panel.style.top = `${rect.bottom + PANEL_OFFSET}px`;
+          } else {
+            panel.style.bottom = `${window.innerHeight - rect.top + PANEL_OFFSET}px`;
+          }
+        };
+
+        const detachPanelListeners = () => {
+          window.removeEventListener("mousedown", handleDocumentPointerDown);
+          window.removeEventListener("touchstart", handleDocumentPointerDown);
+          window.removeEventListener("keydown", handleWindowKeydown);
+          window.removeEventListener("resize", positionPanel);
+          window.removeEventListener("scroll", positionPanel, true);
+        };
+
+        const clearPanelCloseTimer = () => {
+          if (!panelCloseTimer) {
+            return;
+          }
+          window.clearTimeout(panelCloseTimer);
+          panelCloseTimer = 0;
+        };
+
+        const unmountPicker = () => {
+          pickerMounted = false;
+          pickerMount.innerHTML = "";
+        };
+
+        const closePanel = () => {
+          if (!open) {
+            return;
+          }
+          open = false;
+          toggle.classList.remove("is-open");
+          toggle.setAttribute("aria-expanded", "false");
+          detachPanelListeners();
+          panel.classList.remove("is-open");
+          panel.classList.add("is-closing");
+          clearPanelCloseTimer();
+          panelCloseTimer = window.setTimeout(() => {
+            panel.hidden = true;
+            panel.classList.remove("is-closing");
+            unmountPicker();
+            panelCloseTimer = 0;
+          }, PANEL_ANIMATION_DURATION_MS);
+          if (closeActiveEmojiPicker === closePanel) {
+            closeActiveEmojiPicker = null;
+          }
+        };
+
+        const openPanel = () => {
+          if (open) {
+            return;
+          }
+          if (closeActiveEmojiPicker && closeActiveEmojiPicker !== closePanel) {
+            closeActiveEmojiPicker();
+          }
+          closeActiveEmojiPicker = closePanel;
+          open = true;
+          clearPanelCloseTimer();
+          panel.hidden = false;
+          panel.classList.remove("is-closing");
+          toggle.classList.add("is-open");
+          toggle.setAttribute("aria-expanded", "true");
+          positionPanel();
+          window.requestAnimationFrame(() => {
+            panel.classList.add("is-open");
+          });
+          window.addEventListener("mousedown", handleDocumentPointerDown);
+          window.addEventListener("touchstart", handleDocumentPointerDown);
+          window.addEventListener("keydown", handleWindowKeydown);
+          window.addEventListener("resize", positionPanel);
+          window.addEventListener("scroll", positionPanel, true);
+          mountPicker();
+          trackAppEvent("emoji_picker_open", {
+            app_area: "agent_settings",
+          });
+        };
+
+        const setEmojiValue = (nextValue, closeWhenDone = false, trackChange = true) => {
+          const nextEmoji = firstEmojiGrapheme(nextValue);
+          const changed = input.value !== nextEmoji;
+          input.value = nextEmoji;
+          syncSelectedState();
+          if (changed) {
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+          }
+          if (changed && trackChange) {
+            trackAppEvent("emoji_select", {
+              app_area: "agent_settings",
+              has_emoji: nextEmoji !== "",
+            });
+          }
+          if (closeWhenDone) {
+            closePanel();
+          }
+        };
+
+        function handleDocumentPointerDown(event) {
+          if (eventIncludesNode(event, root) || eventIncludesNode(event, panel)) {
+            return;
+          }
+          closePanel();
+        }
+
+        function handleWindowKeydown(event) {
+          if (event.key === "Escape") {
+            closePanel();
+          }
+        }
+
+        toggle.addEventListener("click", () => {
+          if (toggle.disabled || input.disabled || input.readOnly) {
+            return;
+          }
+          if (open) {
+            closePanel();
+            return;
+          }
+          openPanel();
+        });
+
+        clearButton.addEventListener("click", () => {
+          trackAppEvent("emoji_clear", {
+            app_area: "agent_settings",
+          });
+          setEmojiValue("", true, false);
+        });
+
+        setEmojiValue(input.value, false, false);
+      };
+
       const tokenMode = (value) => String(value || "").trim().toLowerCase().startsWith("b_") ? "new" : "existing";
       const applyTokenMode = () => {
         const mode = tokenInput instanceof HTMLInputElement ? tokenMode(tokenInput.value) : "existing";
@@ -159,6 +487,11 @@
       if (bindForm instanceof HTMLFormElement) {
         bindForm.addEventListener("submit", applyTokenMode);
       }
+      document.querySelectorAll("[data-hub-emoji-picker]").forEach((picker) => {
+        if (picker instanceof HTMLElement) {
+          initHubEmojiPicker(picker);
+        }
+      });
       applyTokenMode();
     })();
   </script>
