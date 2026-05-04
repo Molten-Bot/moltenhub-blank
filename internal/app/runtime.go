@@ -12,6 +12,8 @@ import (
 )
 
 const (
+	HubRegionNA   = "na"
+	HubRegionEU   = "eu"
 	hubBaseDomain = "hub.molten.bot"
 	hubCatalogURL = "https://molten.bot/hubs.json"
 )
@@ -24,8 +26,8 @@ type HubRuntime struct {
 }
 
 var fallbackHubRuntimes = []HubRuntime{
-	{ID: "na", Label: "NA", Description: "North America", HubURL: "https://na.hub.molten.bot"},
-	{ID: "eu", Label: "EU", Description: "Europe", HubURL: "https://eu.hub.molten.bot"},
+	{ID: HubRegionNA, Label: "NA", Description: "North America", HubURL: hubURLForRegion(HubRegionNA)},
+	{ID: HubRegionEU, Label: "EU", Description: "Europe", HubURL: hubURLForRegion(HubRegionEU)},
 }
 
 var (
@@ -193,8 +195,11 @@ func normalizeHubRuntimeURL(raw string) string {
 
 func runtimeFromHost(host string) (HubRuntime, bool) {
 	host = strings.ToLower(strings.TrimSpace(host))
+	if host == "" {
+		return HubRuntime{}, false
+	}
 	for _, runtime := range currentHubRuntimes() {
-		root := strings.ToLower(runtime.ID + "." + hubBaseDomain)
+		root := hubHostForRegion(runtime.ID)
 		if host == root || strings.HasSuffix(host, "."+root) {
 			return runtime, true
 		}
@@ -202,13 +207,32 @@ func runtimeFromHost(host string) (HubRuntime, bool) {
 	return HubRuntime{}, false
 }
 
+func hubHostForRegion(region string) string {
+	region = strings.TrimSpace(strings.ToLower(region))
+	if region == "" {
+		return ""
+	}
+	return region + "." + hubBaseDomain
+}
+
+func hubURLForRegion(region string) string {
+	host := hubHostForRegion(region)
+	if host == "" {
+		return ""
+	}
+	return "https://" + host
+}
+
 func catalogHubURL(domain string) string {
 	domain = strings.ToLower(strings.TrimSpace(domain))
-	if domain == "" || !strings.HasSuffix(domain, "."+hubBaseDomain) {
+	if domain == "" {
 		return ""
 	}
 	parsed, err := url.Parse("https://" + domain)
 	if err != nil || parsed.Hostname() != domain || parsed.User != nil || parsed.Port() != "" {
+		return ""
+	}
+	if !strings.HasSuffix(parsed.Hostname(), "."+hubBaseDomain) {
 		return ""
 	}
 	return strings.TrimRight(parsed.String(), "/")
