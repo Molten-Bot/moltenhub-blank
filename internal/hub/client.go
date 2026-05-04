@@ -1,0 +1,483 @@
+package hub
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"path"
+	"strings"
+	"time"
+)
+
+type Client struct {
+	baseURL    string
+	httpClient *http.Client
+	userAgent  string
+	endpoints  RuntimeEndpoints
+}
+
+type APIError struct {
+	StatusCode int
+	Code       string `json:"error"`
+	Message    string `json:"message"`
+	Retryable  bool   `json:"retryable"`
+	NextAction string `json:"next_action"`
+	Detail     any    `json:"error_detail"`
+}
+
+func (e *APIError) Error() string {
+	if e == nil {
+		return "<nil>"
+	}
+	message := e.Message
+	if message == "" {
+		message = http.StatusText(e.StatusCode)
+	}
+	if e.Code == "" {
+		return fmt.Sprintf("hub API %d: %s", e.StatusCode, message)
+	}
+	return fmt.Sprintf("hub API %d %s: %s", e.StatusCode, e.Code, message)
+}
+
+type BindRequest struct {
+	HubURL    string `json:"-"`
+	BindToken string `json:"bind_token"`
+	Handle    string `json:"handle,omitempty"`
+}
+
+type BindResponse struct {
+	AgentToken string `json:"agent_token"`
+	AgentUUID  string `json:"agent_uuid"`
+	AgentURI   string `json:"agent_uri"`
+	Handle     string `json:"handle"`
+	APIBase    string `json:"api_base"`
+	Endpoints  struct {
+		Manifest       string `json:"manifest"`
+		Capabilities   string `json:"capabilities"`
+		Metadata       string `json:"metadata"`
+		OpenClawPull   string `json:"openclaw_messages_pull"`
+		OpenClawPush   string `json:"openclaw_messages_publish"`
+		Offline        string `json:"openclaw_offline"`
+		MessagesPull   string `json:"messages_pull"`
+		MessagesPush   string `json:"messages_publish"`
+		OpenClawPullV2 string `json:"openclaw_messages_pull_url"`
+	} `json:"endpoints"`
+}
+
+type RuntimeEndpoints struct {
+	ManifestURL        string
+	CapabilitiesURL    string
+	MetadataURL        string
+	OpenClawPullURL    string
+	OpenClawPushURL    string
+	OpenClawOfflineURL string
+}
+
+type UpdateMetadataRequest struct {
+	Handle   string         `json:"handle,omitempty"`
+	Metadata map[string]any `json:"metadata,omitempty"`
+}
+
+type PullResponse struct {
+	DeliveryID      string          `json:"delivery_id"`
+	MessageID       string          `json:"message_id"`
+	FromAgentUUID   string          `json:"from_agent_uuid"`
+	FromAgentURI    string          `json:"from_agent_uri"`
+	ToAgentUUID     string          `json:"to_agent_uuid"`
+	ToAgentURI      string          `json:"to_agent_uri"`
+	OpenClawMessage OpenClawMessage `json:"openclaw_message"`
+}
+
+type OpenClawMessage struct {
+	Type      string `json:"type,omitempty"`
+	Kind      string `json:"kind,omitempty"`
+	RequestID string `json:"request_id,omitempty"`
+}
+
+type OfflineRequest struct {
+	SessionKey string `json:"session_key,omitempty"`
+	Reason     string `json:"reason,omitempty"`
+}
+
+func NewClient(baseURL string) *Client {
+	return &Client{
+		baseURL: strings.TrimRight(baseURL, "/"),
+		httpClient: &http.Client{
+			Timeout: 30 * time.Second,
+		},
+		userAgent: "moltenhub-blank/1.0",
+	}
+}
+
+func (c *Client) SetBaseURL(baseURL string) {
+	c.baseURL = strings.TrimRight(baseURL, "/")
+}
+
+func (c *Client) SetRuntimeEndpoints(endpoints RuntimeEndpoints) {
+	c.endpoints = endpoints
+}
+
+func (c *Client) BindAgent(ctx context.Context, req BindRequest) (BindResponse, error) {
+	bindToken := strings.TrimSpace(req.BindToken)
+	if bindToken == "" {
+		return BindResponse{}, errors.New("bind token is required")
+	}
+	payload := map[string]string{"bind_token": bindToken}
+	if handle := strings.TrimSpace(req.Handle); handle != "" {
+		payload["handle"] = handle
+	}
+	var raw json.RawMessage
+	if err := c.doJSON(ctx, http.MethodPost, "/v1/agents/bind", "", payload, &raw); err != nil {
+		return BindResponse{}, fmt.Errorf("/v1/agents/bind: %w", err)
+	}
+	return parseBindResponsePayload(raw)
+}
+
+func (c *Client) UpdateMetadata(ctx context.Context, token string, req UpdateMetadataRequest) (map[string]any, error) {
+	candidates := []string{strings.TrimSpace(c.endpoints.MetadataURL), "/v1/agents/me/metadata", "/v1/agents/me"}
+	var lastErr error
+	seen := map[string]struct{}{}
+	for _, endpoint := range candidates {
+		if endpoint == "" {
+			continue
+		}
+		if _, ok := seen[endpoint]; ok {
+			continue
+		}
+		seen[endpoint] = struct{}{}
+		var out map[string]any
+		err := c.doJSON(ctx, http.MethodPatch, endpoint, token, req, &out)
+		if err == nil {
+			return out, nil
+		}
+		if !shouldRetryMetadataEndpoint(err) {
+			return nil, err
+		}
+		lastErr = err
+	}
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, errors.New("metadata endpoint is not configured")
+}
+
+func (c *Client) GetCapabilities(ctx context.Context, token string) (map[string]any, error) {
+	var out map[string]any
+	err := c.doJSON(ctx, http.MethodGet, c.runtimeEndpoint(c.endpoints.CapabilitiesURL, "/v1/agents/me/capabilities"), token, nil, &out)
+	return out, err
+}
+
+func (c *Client) PullOpenClaw(ctx context.Context, token string, timeout time.Duration) (PullResponse, bool, error) {
+	values := url.Values{}
+	if timeout > 0 {
+		values.Set("timeout_ms", fmt.Sprintf("%d", timeout.Milliseconds()))
+	}
+	endpoint := c.runtimeEndpoint(c.endpoints.OpenClawPullURL, "/v1/openclaw/messages/pull")
+	if len(values) > 0 {
+		endpoint += "?" + values.Encode()
+	}
+	req, err := c.newRequest(ctx, http.MethodGet, endpoint, token, nil)
+	if err != nil {
+		return PullResponse{}, false, err
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return PullResponse{}, false, fmt.Errorf("hub pull: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNoContent {
+		return PullResponse{}, false, nil
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return PullResponse{}, false, decodeAPIError(resp)
+	}
+	var envelope struct {
+		Result json.RawMessage `json:"result"`
+		Data   json.RawMessage `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+		return PullResponse{}, false, fmt.Errorf("decode pull response: %w", err)
+	}
+	result, err := decodePullResponsePayload(coalesceRaw(envelope.Result, envelope.Data), "pull response")
+	if err != nil {
+		return PullResponse{}, false, err
+	}
+	return result, true, nil
+}
+
+func (c *Client) AckOpenClaw(ctx context.Context, token, deliveryID string) error {
+	return c.doJSON(ctx, http.MethodPost, c.openClawDeliveryEndpoint("ack"), token, map[string]string{"delivery_id": strings.TrimSpace(deliveryID)}, nil)
+}
+
+func (c *Client) NackOpenClaw(ctx context.Context, token, deliveryID string) error {
+	return c.doJSON(ctx, http.MethodPost, c.openClawDeliveryEndpoint("nack"), token, map[string]string{"delivery_id": strings.TrimSpace(deliveryID)}, nil)
+}
+
+func (c *Client) MarkOffline(ctx context.Context, token string, req OfflineRequest) error {
+	return c.doJSON(ctx, http.MethodPost, c.runtimeEndpoint(c.endpoints.OpenClawOfflineURL, "/v1/openclaw/messages/offline"), token, req, nil)
+}
+
+func (c *Client) CheckPing(ctx context.Context) (string, error) {
+	pingURL, err := hubPingURL(c.baseURL)
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pingURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("build ping request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", c.userAgent)
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("GET %s failed: %w", pingURL, err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
+	detail := fmt.Sprintf("%s status=%d", pingURL, resp.StatusCode)
+	if trimmed := strings.TrimSpace(string(body)); trimmed != "" {
+		detail += fmt.Sprintf(" body=%q", strings.Join(strings.Fields(trimmed), " "))
+	}
+	if resp.StatusCode/100 != 2 {
+		return "", fmt.Errorf("GET %s returned status=%d", pingURL, resp.StatusCode)
+	}
+	return detail, nil
+}
+
+func (c *Client) doJSON(ctx context.Context, method, endpoint, token string, body any, out any) error {
+	req, err := c.newRequest(ctx, method, endpoint, token, body)
+	if err != nil {
+		return err
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("hub %s %s: %w", method, endpoint, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return decodeAPIError(resp)
+	}
+	rawBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read hub response: %w", err)
+	}
+	if out == nil || len(bytes.TrimSpace(rawBody)) == 0 {
+		return nil
+	}
+	payload := rawBody
+	var envelope struct {
+		Result json.RawMessage `json:"result"`
+		Data   json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(rawBody, &envelope); err == nil {
+		payload = coalesceRaw(envelope.Result, envelope.Data, rawBody)
+	}
+	if err := json.Unmarshal(payload, out); err != nil {
+		return fmt.Errorf("decode hub result payload: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) newRequest(ctx context.Context, method, endpoint, token string, body any) (*http.Request, error) {
+	var reader io.Reader
+	if body != nil {
+		payload, err := json.Marshal(body)
+		if err != nil {
+			return nil, fmt.Errorf("encode request body: %w", err)
+		}
+		reader = bytes.NewReader(payload)
+	}
+	u, err := url.Parse(c.baseURL)
+	if err != nil {
+		return nil, fmt.Errorf("parse base URL: %w", err)
+	}
+	if strings.HasPrefix(endpoint, "http://") || strings.HasPrefix(endpoint, "https://") {
+		u, err = url.Parse(endpoint)
+		if err != nil {
+			return nil, fmt.Errorf("parse endpoint URL: %w", err)
+		}
+	} else {
+		query := ""
+		if idx := strings.Index(endpoint, "?"); idx >= 0 {
+			query = endpoint[idx+1:]
+			endpoint = endpoint[:idx]
+		}
+		u.Path = joinURLPath(u.Path, endpoint)
+		u.RawQuery = query
+	}
+	req, err := http.NewRequestWithContext(ctx, method, u.String(), reader)
+	if err != nil {
+		return nil, fmt.Errorf("build hub request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", c.userAgent)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if strings.TrimSpace(token) != "" {
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(token))
+	}
+	return req, nil
+}
+
+func parseBindResponsePayload(payload json.RawMessage) (BindResponse, error) {
+	payload = coalesceRaw(payload)
+	var out BindResponse
+	if err := json.Unmarshal(payload, &out); err == nil && strings.TrimSpace(out.AgentToken) != "" {
+		normalizeBindEndpoints(&out)
+		return out, nil
+	}
+	var wrapped struct {
+		Agent BindResponse `json:"agent"`
+		Token string       `json:"agent_token"`
+	}
+	if err := json.Unmarshal(payload, &wrapped); err != nil {
+		return BindResponse{}, fmt.Errorf("decode bind response: %w", err)
+	}
+	out = wrapped.Agent
+	if out.AgentToken == "" {
+		out.AgentToken = wrapped.Token
+	}
+	if strings.TrimSpace(out.AgentToken) == "" {
+		return BindResponse{}, errors.New("bind response missing agent token")
+	}
+	normalizeBindEndpoints(&out)
+	return out, nil
+}
+
+func decodePullResponsePayload(payload json.RawMessage, label string) (PullResponse, error) {
+	payload = coalesceRaw(payload)
+	var out PullResponse
+	if err := json.Unmarshal(payload, &out); err != nil {
+		return PullResponse{}, fmt.Errorf("decode %s: %w", label, err)
+	}
+	return out, nil
+}
+
+func decodeAPIError(resp *http.Response) error {
+	apiErr := &APIError{StatusCode: resp.StatusCode}
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	var envelope struct {
+		Error      string `json:"error"`
+		Message    string `json:"message"`
+		Retryable  bool   `json:"retryable"`
+		NextAction string `json:"next_action"`
+	}
+	_ = json.Unmarshal(body, &envelope)
+	apiErr.Code = envelope.Error
+	apiErr.Message = envelope.Message
+	apiErr.Retryable = envelope.Retryable
+	apiErr.NextAction = envelope.NextAction
+	if apiErr.Message == "" {
+		apiErr.Message = strings.TrimSpace(string(body))
+	}
+	return apiErr
+}
+
+func normalizeBindEndpoints(out *BindResponse) {
+	if out == nil {
+		return
+	}
+	out.Endpoints.OpenClawPull = coalesceString(out.Endpoints.OpenClawPull, out.Endpoints.OpenClawPullV2, out.Endpoints.MessagesPull)
+	out.Endpoints.OpenClawPush = coalesceString(out.Endpoints.OpenClawPush, out.Endpoints.MessagesPush)
+}
+
+func coalesceRaw(values ...json.RawMessage) json.RawMessage {
+	for _, value := range values {
+		if len(bytes.TrimSpace(value)) > 0 {
+			return value
+		}
+	}
+	return nil
+}
+
+func coalesceString(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+func (c *Client) runtimeEndpoint(override, fallback string) string {
+	if strings.TrimSpace(override) != "" {
+		return strings.TrimSpace(override)
+	}
+	return fallback
+}
+
+func (c *Client) openClawDeliveryEndpoint(action string) string {
+	action = strings.ToLower(strings.TrimSpace(action))
+	if action != "ack" && action != "nack" {
+		return ""
+	}
+	if endpoint := deliveryEndpointFromPull(c.endpoints.OpenClawPullURL, action); endpoint != "" {
+		return endpoint
+	}
+	return "/v1/openclaw/messages/" + action
+}
+
+func deliveryEndpointFromPull(pullURL, action string) string {
+	pullURL = strings.TrimSpace(pullURL)
+	if pullURL == "" {
+		return ""
+	}
+	parsed, err := url.Parse(pullURL)
+	if err != nil {
+		return ""
+	}
+	trimmedPath := strings.TrimRight(parsed.Path, "/")
+	switch {
+	case strings.HasSuffix(trimmedPath, "/messages/pull"):
+		parsed.Path = strings.TrimSuffix(trimmedPath, "/messages/pull") + "/messages/" + action
+	case strings.HasSuffix(trimmedPath, "/messages_pull"):
+		parsed.Path = strings.TrimSuffix(trimmedPath, "/messages_pull") + "/messages_" + action
+	case strings.HasSuffix(trimmedPath, "/pull"):
+		parsed.Path = strings.TrimSuffix(trimmedPath, "/pull") + "/" + action
+	default:
+		return ""
+	}
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String()
+}
+
+func hubPingURL(baseURL string) (string, error) {
+	parsed, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", fmt.Errorf("invalid hub URL %q", baseURL)
+	}
+	parsed.Path = joinURLPath(parsed.Path, "/ping")
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String(), nil
+}
+
+func joinURLPath(basePath, endpoint string) string {
+	if strings.TrimSpace(endpoint) == "" {
+		return basePath
+	}
+	return path.Join("/", basePath, endpoint)
+}
+
+func shouldRetryMetadataEndpoint(err error) bool {
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	if apiErr.StatusCode == http.StatusNotFound {
+		return true
+	}
+	if apiErr.StatusCode != http.StatusUnauthorized {
+		return false
+	}
+	code := strings.ToLower(strings.TrimSpace(apiErr.Code))
+	message := strings.ToLower(strings.TrimSpace(apiErr.Message))
+	return code == "unauthorized" || strings.Contains(message, "missing or invalid bearer token")
+}

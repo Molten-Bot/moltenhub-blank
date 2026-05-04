@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Molten Hub Blank</title>
+  <link rel="stylesheet" href="/styles.css">
+  {{if .GoogleAnalyticsMeasurementID}}
+  <script async src="https://www.googletagmanager.com/gtag/js?id={{.GoogleAnalyticsMeasurementID}}"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    window.gtag = window.gtag || function() { window.dataLayer.push(arguments); };
+    window.gtag("js", new Date());
+    window.gtag("config", "{{.GoogleAnalyticsMeasurementID}}", { send_page_view: false });
+  </script>
+  {{end}}
+</head>
+<body>
+  <main class="shell">
+    <header class="page-header">
+      <div class="brand-lockup">
+        <img id="moltenhub-logo" class="brand-logo brand-logo-visible" src="/static/logo.svg" alt="">
+        <div>
+          <p class="eyebrow">Molten Hub</p>
+          <h1>Blank</h1>
+        </div>
+      </div>
+      <div class="connection-pill {{if eq .State.Connection.Status "connected"}}is-online{{else}}is-offline{{end}}">
+        <span class="status-dot"></span>
+        <span>{{.State.Connection.Transport}}</span>
+      </div>
+    </header>
+
+    {{if .Flash}}
+    <div class="flash {{if .IsError}}flash-error{{else}}flash-info{{end}}">{{.Flash}}</div>
+    {{end}}
+
+    <section class="hub-card auth-panel">
+      <div class="section-heading">
+        <p class="eyebrow">Connection</p>
+        <h2>Hub Configuration</h2>
+      </div>
+      <form method="post" action="/bind" class="form-grid">
+        <label>
+          <span>Hub</span>
+          <select name="hub_region">
+            {{range .RuntimeOptions}}
+            <option value="{{.ID}}" {{if eq $.SelectedRuntime.ID .ID}}selected{{end}}>{{.Label}} - {{.Description}}</option>
+            {{end}}
+          </select>
+        </label>
+        <label>
+          <span>Mode</span>
+          <select name="agent_mode">
+            <option value="new">Bind token</option>
+            <option value="existing">Agent token</option>
+          </select>
+        </label>
+        <label>
+          <span>Token</span>
+          <input type="password" name="bind_token" placeholder="b_... or t_..." autocomplete="off">
+        </label>
+        <label>
+          <span>Handle</span>
+          <input name="handle" value="{{.State.Session.Handle}}" placeholder="optional">
+        </label>
+        <label>
+          <span>Display Name</span>
+          <input name="display_name" value="{{if .State.Session.DisplayName}}{{.State.Session.DisplayName}}{{else}}Molten Hub Blank{{end}}">
+        </label>
+        <label>
+          <span>Emoji</span>
+          <input name="emoji" value="{{if .State.Session.Emoji}}{{.State.Session.Emoji}}{{else}}*{{end}}">
+        </label>
+        <label class="span-2">
+          <span>Profile</span>
+          <textarea name="profile_markdown" rows="3">{{if .State.Session.ProfileBio}}{{.State.Session.ProfileBio}}{{else}}Blank Molten Hub connectivity app.{{end}}</textarea>
+        </label>
+        <div class="button-row span-2">
+          <button type="submit" class="primary-button"><i data-lucide="plug"></i><span>Connect</span></button>
+          {{if .State.Session.AgentToken}}
+          <button type="submit" formaction="/disconnect" class="secondary-button"><i data-lucide="unplug"></i><span>Disconnect</span></button>
+          {{end}}
+        </div>
+      </form>
+    </section>
+
+    <section class="hub-grid">
+      <article class="hub-card">
+        <div class="section-heading">
+          <p class="eyebrow">Status</p>
+          <h2>Transport</h2>
+        </div>
+        <dl class="detail-list">
+          <div><dt>Status</dt><dd>{{.State.Connection.Status}}</dd></div>
+          <div><dt>Transport</dt><dd>{{.State.Connection.Transport}}</dd></div>
+          <div><dt>Base URL</dt><dd>{{.State.Connection.BaseURL}}</dd></div>
+          <div><dt>Last Change</dt><dd>{{formatTime .State.Connection.LastChangedAt}}</dd></div>
+          {{if .State.Connection.Detail}}<div><dt>Detail</dt><dd>{{.State.Connection.Detail}}</dd></div>{{end}}
+          {{if .State.Connection.Error}}<div><dt>Error</dt><dd>{{.State.Connection.Error}}</dd></div>{{end}}
+        </dl>
+      </article>
+      <article class="hub-card">
+        <div class="section-heading">
+          <p class="eyebrow">Onboard</p>
+          <h2>Stages</h2>
+        </div>
+        <ol class="step-list">
+          {{range .Onboarding.Steps}}
+          <li class="step-item step-{{.Status}}">
+            <span>{{.Label}}</span>
+            <small>{{.Detail}}</small>
+          </li>
+          {{end}}
+        </ol>
+      </article>
+    </section>
+
+    <section class="hub-card">
+      <div class="section-heading">
+        <p class="eyebrow">Runtime</p>
+        <h2>Recent Events</h2>
+      </div>
+      <div class="event-list">
+        {{range .State.RecentEvents}}
+        <article>
+          <time>{{formatTime .At}}</time>
+          <strong>{{.Title}}</strong>
+          <p>{{.Detail}}</p>
+        </article>
+        {{else}}
+        <p class="muted">No events.</p>
+        {{end}}
+      </div>
+    </section>
+  </main>
+  <script src="/static/lucide.min.js"></script>
+  <script>window.lucide && window.lucide.createIcons();</script>
+</body>
+</html>
