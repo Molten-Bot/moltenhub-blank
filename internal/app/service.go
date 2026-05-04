@@ -122,15 +122,22 @@ func (s *Service) BindAndRegister(ctx context.Context, profile BindProfile) erro
 	if err != nil {
 		return WrapOnboardingError(OnboardingStepBind, err)
 	}
+	agentProfile := normalizeAgentProfile(AgentProfile{
+		Handle:          profile.Handle,
+		DisplayName:     profile.DisplayName,
+		Emoji:           profile.Emoji,
+		ProfileMarkdown: profile.ProfileMarkdown,
+	})
 	mode, bindToken, agentToken := NormalizeOnboardingTokens(profile.AgentMode, profile.BindToken, profile.AgentToken)
 	if mode == OnboardingModeExisting {
-		return s.connectExistingAgent(ctx, runtime, agentToken, profile)
+		return s.connectExistingAgent(ctx, runtime, agentToken, agentProfile)
 	}
+	handleRequestedDuringBind := agentProfile.Handle != ""
 	s.setHubBaseURL(runtime.HubURL)
 	result, err := s.hub.BindAgent(ctx, hub.BindRequest{
 		HubURL:    runtime.HubURL,
 		BindToken: bindToken,
-		Handle:    strings.TrimSpace(profile.Handle),
+		Handle:    agentProfile.Handle,
 	})
 	if err != nil {
 		return WrapOnboardingError(OnboardingStepBind, err)
@@ -154,10 +161,10 @@ func (s *Service) BindAndRegister(ctx context.Context, profile BindProfile) erro
 		BindToken:       result.AgentToken,
 		AgentUUID:       result.AgentUUID,
 		AgentURI:        result.AgentURI,
-		Handle:          coalesceTrimmed(result.Handle, profile.Handle),
-		DisplayName:     coalesceTrimmed(profile.DisplayName, "Molten Hub Blank"),
-		Emoji:           coalesceTrimmed(profile.Emoji, "*"),
-		ProfileBio:      coalesceTrimmed(profile.ProfileMarkdown, "Blank Molten Hub connectivity app."),
+		Handle:          coalesceTrimmed(result.Handle, agentProfile.Handle),
+		DisplayName:     coalesceTrimmed(agentProfile.DisplayName, "Molten Hub Blank"),
+		Emoji:           coalesceTrimmed(agentProfile.Emoji, "*"),
+		ProfileBio:      coalesceTrimmed(agentProfile.ProfileMarkdown, "Blank Molten Hub connectivity app."),
 		ManifestURL:     runtimeEndpoints.ManifestURL,
 		MetadataURL:     runtimeEndpoints.MetadataURL,
 		CapabilitiesURL: runtimeEndpoints.CapabilitiesURL,
@@ -173,7 +180,15 @@ func (s *Service) BindAndRegister(ctx context.Context, profile BindProfile) erro
 		return WrapOnboardingError(OnboardingStepWorkBind, fmt.Errorf("agent bound, but credential verification failed: %w", err))
 	}
 	s.noteHubInteraction(nil, ConnectionTransportHTTP)
-	if err := s.updateAgentProfile(ctx, result.AgentToken, AgentProfile{DisplayName: session.DisplayName, Emoji: session.Emoji, ProfileMarkdown: session.ProfileBio}); err != nil {
+	registrationProfile := AgentProfile{
+		DisplayName:     session.DisplayName,
+		Emoji:           session.Emoji,
+		ProfileMarkdown: session.ProfileBio,
+	}
+	if handleRequestedDuringBind {
+		registrationProfile.Handle = agentProfile.Handle
+	}
+	if err := s.updateAgentProfile(ctx, result.AgentToken, registrationProfile); err != nil {
 		s.noteHubInteraction(err, ConnectionTransportHTTP)
 		return WrapOnboardingError(OnboardingStepProfileSet, fmt.Errorf("agent bound, but profile registration failed: %w", err))
 	}
@@ -186,11 +201,13 @@ func (s *Service) BindAndRegister(ctx context.Context, profile BindProfile) erro
 	return nil
 }
 
-func (s *Service) connectExistingAgent(ctx context.Context, runtime HubRuntime, agentToken string, profile BindProfile) error {
+func (s *Service) connectExistingAgent(ctx context.Context, runtime HubRuntime, agentToken string, profile AgentProfile) error {
 	agentToken = strings.TrimSpace(agentToken)
 	if agentToken == "" {
 		return WrapOnboardingError(OnboardingStepBind, errors.New("agent token is required"))
 	}
+	profile = normalizeAgentProfile(profile)
+	profile.Handle = ""
 	apiBase := NormalizeHubEndpointURL(defaultAPIBaseForHub(runtime.HubURL))
 	if apiBase == "" {
 		return WrapOnboardingError(OnboardingStepBind, fmt.Errorf("runtime config missing supported api_base for %q", runtime.HubURL))
@@ -204,9 +221,6 @@ func (s *Service) connectExistingAgent(ctx context.Context, runtime HubRuntime, 
 	}
 	s.noteHubInteraction(nil, ConnectionTransportHTTP)
 	identity := identityFromCapabilities(capabilities)
-	profile.DisplayName = strings.TrimSpace(profile.DisplayName)
-	profile.Emoji = strings.TrimSpace(profile.Emoji)
-	profile.ProfileMarkdown = strings.TrimSpace(profile.ProfileMarkdown)
 	session := Session{
 		BoundAt:     time.Now().UTC(),
 		HubURL:      runtime.HubURL,
@@ -223,11 +237,9 @@ func (s *Service) connectExistingAgent(ctx context.Context, runtime HubRuntime, 
 	if err := s.storeConnectedSession(runtime, session); err != nil {
 		return WrapOnboardingError(OnboardingStepBind, err)
 	}
-	if profile.DisplayName != "" || profile.Emoji != "" || profile.ProfileMarkdown != "" {
-		if err := s.updateAgentProfile(ctx, agentToken, AgentProfile{DisplayName: profile.DisplayName, Emoji: profile.Emoji, ProfileMarkdown: profile.ProfileMarkdown}); err != nil {
-			s.noteHubInteraction(err, ConnectionTransportHTTP)
-			return WrapOnboardingError(OnboardingStepProfileSet, fmt.Errorf("existing agent verified, but profile registration failed: %w", err))
-		}
+	if err := s.updateAgentProfile(ctx, agentToken, profile); err != nil {
+		s.noteHubInteraction(err, ConnectionTransportHTTP)
+		return WrapOnboardingError(OnboardingStepProfileSet, fmt.Errorf("existing agent verified, but profile registration failed: %w", err))
 	}
 	if _, err := s.hub.GetCapabilities(ctx, agentToken); err != nil {
 		s.noteHubInteraction(err, ConnectionTransportHTTP)
@@ -468,8 +480,9 @@ func (s *Service) ensurePresenceOnline(ctx context.Context, transport string) er
 }
 
 func (s *Service) updateAgentProfile(ctx context.Context, token string, profile AgentProfile) error {
+	profile = normalizeAgentProfile(profile)
 	_, err := s.hub.UpdateMetadata(ctx, token, hub.UpdateMetadataRequest{
-		Handle: strings.TrimSpace(profile.Handle),
+		Handle: profile.Handle,
 		Metadata: map[string]any{
 			"harness":          blankHarness,
 			"display_name":     coalesceTrimmed(profile.DisplayName, "Molten Hub Blank"),
@@ -480,6 +493,15 @@ func (s *Service) updateAgentProfile(ctx context.Context, token string, profile 
 		},
 	})
 	return err
+}
+
+func normalizeAgentProfile(profile AgentProfile) AgentProfile {
+	return AgentProfile{
+		Handle:          strings.TrimSpace(profile.Handle),
+		DisplayName:     strings.TrimSpace(profile.DisplayName),
+		Emoji:           strings.TrimSpace(profile.Emoji),
+		ProfileMarkdown: strings.TrimSpace(profile.ProfileMarkdown),
+	}
 }
 
 func (s *Service) configureHubClient(state AppState) {
