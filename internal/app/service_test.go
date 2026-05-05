@@ -174,6 +174,9 @@ func TestBindAndRegisterUsesBindPrefixForHandle(t *testing.T) {
 	if len(fake.metadataRequests) != 1 {
 		t.Fatalf("metadata requests = %d, want 1", len(fake.metadataRequests))
 	}
+	if got := fake.metadataRequests[0].Handle; got != "new-agent" {
+		t.Fatalf("metadata handle = %q, want new-agent", got)
+	}
 	state := store.Snapshot()
 	if got := state.Session.AgentToken; got != "t_bound" {
 		t.Fatalf("agent_token = %q, want t_bound", got)
@@ -201,8 +204,11 @@ func TestBindAndRegisterUsesAgentPrefixAsExisting(t *testing.T) {
 	if len(fake.bindRequests) != 0 {
 		t.Fatalf("bind requests = %d, want 0", len(fake.bindRequests))
 	}
-	if len(fake.metadataRequests) != 0 {
-		t.Fatalf("metadata requests = %d, want 0", len(fake.metadataRequests))
+	if len(fake.metadataRequests) != 1 {
+		t.Fatalf("metadata requests = %d, want 1", len(fake.metadataRequests))
+	}
+	if got := fake.metadataRequests[0].Handle; got != "" {
+		t.Fatalf("metadata handle = %q, want empty", got)
 	}
 	state := store.Snapshot()
 	if got := state.Session.AgentToken; got != "t_existing-123" {

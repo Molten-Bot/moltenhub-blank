@@ -114,11 +114,15 @@ func (s *Server) handleBind(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	mode, bindToken, agentToken := app.NormalizeOnboardingTokens(r.FormValue("agent_mode"), r.FormValue("bind_token"), r.FormValue("agent_token"))
+	handle := ""
+	if mode == app.OnboardingModeNew {
+		handle = strings.TrimSpace(r.FormValue("handle"))
+	}
 	err := s.service.BindAndRegister(r.Context(), app.BindProfile{
 		AgentMode:       mode,
 		AgentToken:      agentToken,
 		BindToken:       bindToken,
-		Handle:          strings.TrimSpace(r.FormValue("handle")),
+		Handle:          handle,
 		DisplayName:     strings.TrimSpace(r.FormValue("display_name")),
 		Emoji:           strings.TrimSpace(r.FormValue("emoji")),
 		ProfileMarkdown: strings.TrimSpace(r.FormValue("profile_markdown")),
@@ -160,11 +164,15 @@ func (s *Server) handleOnboarding(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	mode, bindToken, agentToken := app.NormalizeOnboardingTokens(payload.AgentMode, payload.BindToken, payload.AgentToken)
+	handle := ""
+	if mode == app.OnboardingModeNew {
+		handle = strings.TrimSpace(payload.Handle)
+	}
 	err := s.service.BindAndRegister(r.Context(), app.BindProfile{
 		AgentMode:       mode,
 		AgentToken:      agentToken,
 		BindToken:       bindToken,
-		Handle:          strings.TrimSpace(payload.Handle),
+		Handle:          handle,
 		DisplayName:     strings.TrimSpace(payload.DisplayName),
 		Emoji:           strings.TrimSpace(payload.Emoji),
 		ProfileMarkdown: strings.TrimSpace(payload.ProfileMarkdown),
@@ -262,6 +270,10 @@ func (s *Server) renderIndex(w http.ResponseWriter, flash string) {
 }
 
 func (s *Server) applyRuntimeSelection(region string) error {
+	region = strings.TrimSpace(region)
+	if region == "" {
+		return nil
+	}
 	runtime, err := app.ResolveHubRuntime(region, "")
 	if err != nil {
 		return err
@@ -302,9 +314,6 @@ type onboardingView struct {
 
 func onboardingViewFromState(state app.AppState, stage string) onboardingView {
 	mode := app.OnboardingModeExisting
-	if strings.TrimSpace(state.Session.AgentToken) == "" {
-		mode = app.OnboardingModeNew
-	}
 	steps := app.DefaultOnboardingStepsForMode(mode)
 	if stage == "complete" || strings.TrimSpace(state.Session.AgentToken) != "" {
 		for i := range steps {
