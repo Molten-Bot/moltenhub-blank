@@ -57,25 +57,35 @@ type BindResponse struct {
 	Handle     string `json:"handle"`
 	APIBase    string `json:"api_base"`
 	Endpoints  struct {
-		Manifest       string `json:"manifest"`
-		Capabilities   string `json:"capabilities"`
-		Metadata       string `json:"metadata"`
-		OpenClawPull   string `json:"openclaw_messages_pull"`
-		OpenClawPush   string `json:"openclaw_messages_publish"`
-		Offline        string `json:"openclaw_offline"`
-		MessagesPull   string `json:"messages_pull"`
-		MessagesPush   string `json:"messages_publish"`
-		OpenClawPullV2 string `json:"openclaw_messages_pull_url"`
+		Manifest        string `json:"manifest"`
+		Capabilities    string `json:"capabilities"`
+		Metadata        string `json:"metadata"`
+		RuntimePull     string `json:"runtime_messages_pull"`
+		RuntimePush     string `json:"runtime_messages_publish"`
+		RuntimePullURL  string `json:"runtime_messages_pull_url"`
+		RuntimePushURL  string `json:"runtime_messages_publish_url"`
+		RuntimeOffline  string `json:"runtime_messages_offline"`
+		RuntimeWS       string `json:"runtime_messages_ws"`
+		OpenClawPull    string `json:"openclaw_messages_pull"`
+		OpenClawPush    string `json:"openclaw_messages_publish"`
+		OpenClawWS      string `json:"openclaw_messages_ws"`
+		Offline         string `json:"openclaw_offline"`
+		MessagesPull    string `json:"messages_pull"`
+		MessagesPush    string `json:"messages_publish"`
+		OpenClawPullV2  string `json:"openclaw_messages_pull_url"`
+		OpenClawPushV2  string `json:"openclaw_messages_publish_url"`
+		OpenClawOffline string `json:"openclaw_messages_offline"`
 	} `json:"endpoints"`
 }
 
 type RuntimeEndpoints struct {
-	ManifestURL        string
-	CapabilitiesURL    string
-	MetadataURL        string
-	OpenClawPullURL    string
-	OpenClawPushURL    string
-	OpenClawOfflineURL string
+	ManifestURL          string
+	CapabilitiesURL      string
+	MetadataURL          string
+	OpenClawPullURL      string
+	OpenClawPushURL      string
+	OpenClawOfflineURL   string
+	OpenClawWebsocketURL string
 }
 
 type UpdateMetadataRequest struct {
@@ -90,6 +100,7 @@ type PullResponse struct {
 	FromAgentURI    string          `json:"from_agent_uri"`
 	ToAgentUUID     string          `json:"to_agent_uuid"`
 	ToAgentURI      string          `json:"to_agent_uri"`
+	Envelope        OpenClawMessage `json:"envelope"`
 	OpenClawMessage OpenClawMessage `json:"openclaw_message"`
 }
 
@@ -177,7 +188,7 @@ func (c *Client) PullOpenClaw(ctx context.Context, token string, timeout time.Du
 	if timeout > 0 {
 		values.Set("timeout_ms", fmt.Sprintf("%d", timeout.Milliseconds()))
 	}
-	endpoint := c.runtimeEndpoint(c.endpoints.OpenClawPullURL, "/v1/openclaw/messages/pull")
+	endpoint := c.runtimeEndpoint(c.endpoints.OpenClawPullURL, "/v1/runtime/messages/pull")
 	if len(values) > 0 {
 		endpoint += "?" + values.Encode()
 	}
@@ -219,7 +230,7 @@ func (c *Client) NackOpenClaw(ctx context.Context, token, deliveryID string) err
 }
 
 func (c *Client) MarkOffline(ctx context.Context, token string, req OfflineRequest) error {
-	return c.doJSON(ctx, http.MethodPost, c.runtimeEndpoint(c.endpoints.OpenClawOfflineURL, "/v1/openclaw/messages/offline"), token, req, nil)
+	return c.doJSON(ctx, http.MethodPost, c.runtimeEndpoint(c.endpoints.OpenClawOfflineURL, "/v1/runtime/messages/offline"), token, req, nil)
 }
 
 func (c *Client) CheckPing(ctx context.Context) (string, error) {
@@ -382,6 +393,9 @@ func decodePullResponsePayload(payload json.RawMessage, label string) (PullRespo
 	if err := json.Unmarshal(payload, &out); err != nil {
 		return PullResponse{}, fmt.Errorf("decode %s: %w", label, err)
 	}
+	if out.OpenClawMessage == (OpenClawMessage{}) {
+		out.OpenClawMessage = out.Envelope
+	}
 	return out, nil
 }
 
@@ -393,12 +407,22 @@ func decodeAPIError(resp *http.Response) error {
 		Message    string `json:"message"`
 		Retryable  bool   `json:"retryable"`
 		NextAction string `json:"next_action"`
+		Detail     any    `json:"error_detail"`
 	}
 	_ = json.Unmarshal(body, &envelope)
 	apiErr.Code = envelope.Error
 	apiErr.Message = envelope.Message
 	apiErr.Retryable = envelope.Retryable
 	apiErr.NextAction = envelope.NextAction
+	apiErr.Detail = envelope.Detail
+	if apiErr.Detail == nil {
+		var aliases struct {
+			ErrorDetails any `json:"Error details"`
+			ErrorColon   any `json:"Error details:"`
+		}
+		_ = json.Unmarshal(body, &aliases)
+		apiErr.Detail = coalesceAny(aliases.ErrorDetails, aliases.ErrorColon)
+	}
 	if apiErr.Message == "" {
 		apiErr.Message = strings.TrimSpace(string(body))
 	}
@@ -409,8 +433,9 @@ func normalizeBindEndpoints(out *BindResponse) {
 	if out == nil {
 		return
 	}
-	out.Endpoints.OpenClawPull = coalesceString(out.Endpoints.OpenClawPull, out.Endpoints.OpenClawPullV2, out.Endpoints.MessagesPull)
-	out.Endpoints.OpenClawPush = coalesceString(out.Endpoints.OpenClawPush, out.Endpoints.MessagesPush)
+	out.Endpoints.OpenClawPull = coalesceString(out.Endpoints.RuntimePull, out.Endpoints.RuntimePullURL, out.Endpoints.OpenClawPull, out.Endpoints.OpenClawPullV2, out.Endpoints.MessagesPull)
+	out.Endpoints.OpenClawPush = coalesceString(out.Endpoints.RuntimePush, out.Endpoints.RuntimePushURL, out.Endpoints.OpenClawPush, out.Endpoints.OpenClawPushV2, out.Endpoints.MessagesPush)
+	out.Endpoints.Offline = coalesceString(out.Endpoints.RuntimeOffline, out.Endpoints.Offline, out.Endpoints.OpenClawOffline)
 }
 
 func coalesceRaw(values ...json.RawMessage) json.RawMessage {
@@ -431,6 +456,15 @@ func coalesceString(values ...string) string {
 	return ""
 }
 
+func coalesceAny(values ...any) any {
+	for _, value := range values {
+		if value != nil {
+			return value
+		}
+	}
+	return nil
+}
+
 func (c *Client) runtimeEndpoint(override, fallback string) string {
 	if strings.TrimSpace(override) != "" {
 		return strings.TrimSpace(override)
@@ -446,7 +480,7 @@ func (c *Client) openClawDeliveryEndpoint(action string) string {
 	if endpoint := deliveryEndpointFromPull(c.endpoints.OpenClawPullURL, action); endpoint != "" {
 		return endpoint
 	}
-	return "/v1/openclaw/messages/" + action
+	return "/v1/runtime/messages/" + action
 }
 
 func deliveryEndpointFromPull(pullURL, action string) string {

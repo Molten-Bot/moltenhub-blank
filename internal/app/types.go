@@ -44,6 +44,7 @@ type Session struct {
 	OpenClawPullURL string    `json:"openclaw_pull_url,omitempty"`
 	OpenClawPushURL string    `json:"openclaw_push_url,omitempty"`
 	OfflineURL      string    `json:"offline_url,omitempty"`
+	WebsocketURL    string    `json:"websocket_url,omitempty"`
 	OfflineMarked   bool      `json:"offline_marked"`
 }
 
