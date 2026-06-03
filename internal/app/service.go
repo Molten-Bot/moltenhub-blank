@@ -171,6 +171,7 @@ func (s *Service) BindAndRegister(ctx context.Context, profile BindProfile) erro
 		OpenClawPullURL: runtimeEndpoints.OpenClawPullURL,
 		OpenClawPushURL: runtimeEndpoints.OpenClawPushURL,
 		OfflineURL:      runtimeEndpoints.OpenClawOfflineURL,
+		WebsocketURL:    runtimeEndpoints.OpenClawWebsocketURL,
 	}
 	if err := s.storeConnectedSession(runtime, session); err != nil {
 		return WrapOnboardingError(OnboardingStepBind, err)
@@ -610,23 +611,25 @@ func buildAgentMetadata(session Session, sessionKey, transport string) map[strin
 
 func runtimeEndpointsFromBind(result hub.BindResponse) hub.RuntimeEndpoints {
 	return hub.RuntimeEndpoints{
-		ManifestURL:        result.Endpoints.Manifest,
-		CapabilitiesURL:    result.Endpoints.Capabilities,
-		MetadataURL:        result.Endpoints.Metadata,
-		OpenClawPullURL:    result.Endpoints.OpenClawPull,
-		OpenClawPushURL:    result.Endpoints.OpenClawPush,
-		OpenClawOfflineURL: result.Endpoints.Offline,
+		ManifestURL:          result.Endpoints.Manifest,
+		CapabilitiesURL:      result.Endpoints.Capabilities,
+		MetadataURL:          result.Endpoints.Metadata,
+		OpenClawPullURL:      result.Endpoints.OpenClawPull,
+		OpenClawPushURL:      result.Endpoints.OpenClawPush,
+		OpenClawOfflineURL:   result.Endpoints.Offline,
+		OpenClawWebsocketURL: coalesceTrimmed(result.Endpoints.RuntimeWS, result.Endpoints.OpenClawWS),
 	}
 }
 
 func runtimeEndpointsFromSession(session Session) hub.RuntimeEndpoints {
 	return hub.RuntimeEndpoints{
-		ManifestURL:        session.ManifestURL,
-		CapabilitiesURL:    session.CapabilitiesURL,
-		MetadataURL:        session.MetadataURL,
-		OpenClawPullURL:    session.OpenClawPullURL,
-		OpenClawPushURL:    session.OpenClawPushURL,
-		OpenClawOfflineURL: session.OfflineURL,
+		ManifestURL:          session.ManifestURL,
+		CapabilitiesURL:      session.CapabilitiesURL,
+		MetadataURL:          session.MetadataURL,
+		OpenClawPullURL:      session.OpenClawPullURL,
+		OpenClawPushURL:      session.OpenClawPushURL,
+		OpenClawOfflineURL:   session.OfflineURL,
+		OpenClawWebsocketURL: session.WebsocketURL,
 	}
 }
 

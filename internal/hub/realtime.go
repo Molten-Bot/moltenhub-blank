@@ -82,11 +82,14 @@ func (c *Client) ConnectOpenClaw(ctx context.Context, token, sessionKey string) 
 }
 
 func (c *Client) openClawWebsocketEndpoint() string {
-	pullEndpoint := c.runtimeEndpoint(c.endpoints.OpenClawPullURL, "/v1/openclaw/messages/pull")
+	if endpoint := strings.TrimSpace(c.endpoints.OpenClawWebsocketURL); endpoint != "" {
+		return endpoint
+	}
+	pullEndpoint := c.runtimeEndpoint(c.endpoints.OpenClawPullURL, "/v1/runtime/messages/pull")
 	if endpoint := websocketEndpointFromPull(pullEndpoint); endpoint != "" {
 		return endpoint
 	}
-	return "/v1/openclaw/messages/ws"
+	return "/v1/runtime/messages/ws"
 }
 
 func (s *websocketSession) Receive(ctx context.Context) (PullResponse, error) {
